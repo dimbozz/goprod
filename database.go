@@ -73,7 +73,7 @@ func CreateUser(email, username, passwordHash string) (*User, error) {
         VALUES ($1, $2, $3) 
         RETURNING id, created_at
     `
-	// Инициализируем структуру User нулевыми значениями
+	// Инициализируем структуру User
 	user := &User{}
 	// 2. Выполняем запрос с db.QueryRow(query, email, username, passwordHash)
 	// 3. Считываем результат в переменные user.ID и user.CreatedAt
@@ -104,7 +104,34 @@ func GetUserByEmail(email string) (*User, error) {
 	//
 	// Подсказка: используйте sql.ErrNoRows для проверки отсутствия результата
 
-	return nil, fmt.Errorf("not implemented - реализуйте поиск пользователя по email")
+	// 1. Создаем SQL запрос с плейсхолдером $1
+	query := `
+        SELECT id, email, username, password_hash, created_at 
+        FROM users 
+        WHERE email = $1
+    `
+	// Инициализируем структуру User
+	user := &User{}
+
+	// 2. Выполняем запрос с db.QueryRow(query, email)
+	// 3. Считываем все поля в структуру User с помощью Scan()
+	err := db.QueryRow(query, email).Scan(
+		&user.ID,
+		&user.Email,
+		&user.Username,
+		&user.PasswordHash,
+		&user.CreatedAt,
+	)
+
+	if err != nil {
+		// 4. Обрабатываем случай sql.ErrNoRows (пользователь не найден)
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get user by email: %w", err)
+	}
+
+	return user, nil
 }
 
 // GetUserByID находит пользователя по ID
@@ -119,7 +146,31 @@ func GetUserByID(userID int) (*User, error) {
 	//
 	// Запрос: SELECT id, email, username, created_at FROM users WHERE id = $1
 
-	return nil, fmt.Errorf("not implemented - реализуйте поиск пользователя по ID")
+	// 1. Создаем SQL запрос для поиска по ID
+	query := `
+        SELECT id, email, username, created_at 
+        FROM users 
+        WHERE id = $1
+    `
+
+	user := &User{}
+	// 3. Выполняем запрос
+	err := db.QueryRow(query, userID).Scan(
+		&user.ID,
+		&user.Email,
+		&user.Username,
+		&user.CreatedAt,
+	)
+
+	// Обрабатываем ошибку
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Пользователь не найден
+		}
+		return nil, fmt.Errorf("failed to get user by ID %d: %w", userID, err)
+	}
+
+	return user, nil
 }
 
 // UserExistsByEmail проверяет, существует ли пользователь с данным email
@@ -135,7 +186,18 @@ func UserExistsByEmail(email string) (bool, error) {
 	//
 	// Это эффективнее чем получать полную запись пользователя
 
-	return false, fmt.Errorf("not implemented - реализуйте проверку существования пользователя")
+	query := `
+        SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)
+    `
+
+	var ifUserExists bool
+	err := db.QueryRow(query, email).Scan(&ifUserExists)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check user exists: %w", err)
+	}
+
+	return ifUserExists, nil
 }
 
 // GetDB возвращает подключение к базе данных (для тестирования)
