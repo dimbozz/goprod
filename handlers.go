@@ -141,7 +141,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Проверяем пароль
-	if !CheckPassword(user.PasswordHash, req.Password) {
+	if !CheckPassword(req.Password, user.PasswordHash) {
 		sendErrorResponse(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}

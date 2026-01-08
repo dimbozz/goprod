@@ -145,7 +145,7 @@ go run *.go
 # В другом терминале тестируйте API
 curl -X POST http://localhost:8080/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","username":"testuser","password":"SecurePass123"}'
+  -d '{"email":"user@example.com","username":"testuser","password":"SecurePass123"}'
 ```
 
 ## 🧪 Тестирование API
