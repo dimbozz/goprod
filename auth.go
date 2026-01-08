@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+
 	// TODO: Добавьте необходимые импорты:
-	// "time"
-	// "github.com/golang-jwt/jwt/v5"
-	// "golang.org/x/crypto/bcrypt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var jwtSecret []byte
@@ -30,8 +32,9 @@ func HashPassword(password string) (string, error) {
 	// 4. Обработайте ошибку и верните результат как string
 	//
 	// Документация: https://pkg.go.dev/golang.org/x/crypto/bcrypt#GenerateFromPassword
-
-	return "", fmt.Errorf("not implemented - реализуйте хеширование пароля с bcrypt")
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
+	// return "", fmt.Errorf("not implemented - реализуйте хеширование пароля с bcrypt")
 }
 
 // CheckPassword проверяет пароль против хеша
@@ -44,8 +47,9 @@ func CheckPassword(password, hash string) bool {
 	// 3. Верните true если ошибки нет, false если есть
 	//
 	// Документация: https://pkg.go.dev/golang.org/x/crypto/bcrypt#CompareHashAndPassword
-
-	return false // Временная заглушка
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+	// return false // Временная заглушка
 }
 
 // GenerateToken создает JWT токен для пользователя
@@ -62,25 +66,59 @@ func GenerateToken(user User) (string, error) {
 	// 4. Подпишите токен с помощью token.SignedString(jwtSecret)
 	//
 	// Документация: https://pkg.go.dev/github.com/golang-jwt/jwt/v5
+	claims := Claims{
+		UserID:   user.ID,
+		Email:    user.Email,
+		Username: user.Username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
 
-	return "", fmt.Errorf("not implemented - реализуйте генерацию JWT токена")
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign token: %w", err)
+	}
+	return tokenString, nil
 }
 
 // ValidateToken проверяет и парсит JWT токен
 func ValidateToken(tokenString string) (*Claims, error) {
-	// TODO: Реализуйте валидацию JWT токена
-	//
-	// Что нужно сделать:
-	// 1. Создайте пустую структуру claims := &Claims{}
-	// 2. Используйте jwt.ParseWithClaims() для парсинга токена
-	// 3. В keyFunc проверьте, что алгоритм подписи HMAC (*jwt.SigningMethodHMAC)
-	// 4. Верните jwtSecret как ключ для проверки подписи
-	// 5. Проверьте, что токен валиден (token.Valid)
-	// 6. Верните claims и ошибку
-	//
-	// Подсказка: keyFunc - это функция func(token *jwt.Token) (interface{}, error)
+	// Проверяем, что токен не пустой
+	if tokenString == "" {
+		return nil, fmt.Errorf("token is empty")
+	}
 
-	return nil, fmt.Errorf("not implemented - реализуйте валидацию JWT токена")
+	// 1. Создайте пустую структуру claims := &Claims{}
+	claims := &Claims{}
+
+	// 3. В keyFunc проверьте, что алгоритм подписи HMAC (*jwt.SigningMethodHMAC)
+	keyFunc := func(token *jwt.Token) (interface{}, error) {
+		// Проверяем алгоритм подписи
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		// 4. Возвращаем jwtSecret как ключ для проверки подписи
+		return jwtSecret, nil
+	}
+
+	// 2. Используйте jwt.ParseWithClaims() для парсинга токена
+	token, err := jwt.ParseWithClaims(tokenString, claims, keyFunc)
+
+	// Выходим, если есть ошибка парсинга токена
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	// 5. Проверяем, что токен валиден (token.Valid)
+	if !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+
+	// 6. Возвращаем claims и ошибку
+	return claims, nil
 }
 
 // ValidatePassword проверяет требования к паролю
