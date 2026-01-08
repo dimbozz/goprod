@@ -32,7 +32,64 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// - 400 для невалидных данных, 409 для дубликатов, 500 для внутренних ошибок
 	// - Не забудьте установить Content-Type: application/json для ответа
 
-	http.Error(w, "Registration not implemented", http.StatusNotImplemented)
+	// 1. Парсим JSON
+	var req RegisterRequest
+	if err := parseJSONRequest(r, &req); err != nil {
+		sendErrorResponse(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Валидация
+	if err := validateRegisterRequest(&req); err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 3. Проверяем существование email
+	if exists, err := UserExistsByEmail(req.Email); err != nil {
+		log.Printf("Database error: %v", err)
+		sendErrorResponse(w, "Internal server error", http.StatusInternalServerError)
+		return
+	} else if exists {
+		sendErrorResponse(w, "User with this email already exists", http.StatusConflict)
+		return
+	}
+
+	// 4. Хешируем пароль
+	passwordHash, err := HashPassword(req.Password)
+	if err != nil {
+		log.Printf("Hash password error: %v", err)
+		sendErrorResponse(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Создаем пользователя
+	user, err := CreateUser(req.Email, req.Username, passwordHash)
+	if err != nil {
+		log.Printf("Create user error: %v", err)
+		sendErrorResponse(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
+	// 6. Генерируем токен
+	token, err := GenerateToken(*user)
+	if err != nil {
+		log.Printf("Generate token error: %v", err)
+		sendErrorResponse(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// 7. Успешный ответ
+	response := map[string]interface{}{
+		"message": "User registered successfully",
+		"user": map[string]interface{}{
+			"id":       user.ID,
+			"email":    user.Email,
+			"username": user.Username,
+		},
+		"token": token,
+	}
+	sendJSONResponse(w, response, http.StatusCreated)
 }
 
 // LoginHandler обрабатывает вход пользователя
@@ -58,7 +115,56 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// - Используйте HTTP статус 401 для неверных учетных данных
 	// - Не возвращайте password_hash в ответе
 
-	http.Error(w, "Login not implemented", http.StatusNotImplemented)
+	// 1. Парсим JSON
+	var req LoginRequest
+	if err := parseJSONRequest(r, &req); err != nil {
+		sendErrorResponse(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Валидация
+	if err := validateLoginRequest(&req); err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 3. Находим пользователя
+	user, err := GetUserByEmail(req.Email)
+	if err != nil {
+		log.Printf("Database error: %v", err)
+		sendErrorResponse(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+	if user == nil {
+		sendErrorResponse(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// 4. Проверяем пароль
+	if !CheckPassword(user.PasswordHash, req.Password) {
+		sendErrorResponse(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// 5. Генерируем токен
+	token, err := GenerateToken(*user)
+	if err != nil {
+		log.Printf("Generate token error: %v", err)
+		sendErrorResponse(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// 6. Успешный ответ
+	response := map[string]interface{}{
+		"message": "Login successful",
+		"user": map[string]interface{}{
+			"id":       user.ID,
+			"email":    user.Email,
+			"username": user.Username,
+		},
+		"token": token,
+	}
+	sendJSONResponse(w, response, http.StatusOK)
 }
 
 // ProfileHandler возвращает профиль текущего пользователя
@@ -81,7 +187,33 @@ func ProfileHandler(w http.ResponseWriter, r *http.Request) {
 	// - Если пользователь не найден - верните 404
 	// - Не включайте password_hash в ответ
 
-	http.Error(w, "Profile not implemented", http.StatusNotImplemented)
+	// 1. Получаем userID из контекста
+	userID, ok := GetUserIDFromContext(r)
+	if !ok {
+		sendErrorResponse(w, "User ID not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Загружаем пользователя
+	user, err := GetUserByID(userID)
+	if err != nil {
+		log.Printf("Database error: %v", err)
+		sendErrorResponse(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if user == nil {
+		sendErrorResponse(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// 3. Отправляем профиль (без password_hash)
+	response := map[string]interface{}{
+		"id":         user.ID,
+		"email":      user.Email,
+		"username":   user.Username,
+		"created_at": user.CreatedAt,
+	}
+	sendJSONResponse(w, response, http.StatusOK)
 }
 
 // HealthHandler проверяет состояние сервиса
