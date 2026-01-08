@@ -67,7 +67,27 @@ func CreateUser(email, username, passwordHash string) (*User, error) {
 	//
 	// НИКОГДА не используйте fmt.Sprintf для построения SQL запросов!
 
-	return nil, fmt.Errorf("not implemented - реализуйте создание пользователя")
+	// 1. Создаем SQL запрос с плейсхолдерами $1, $2, $3
+	query := `
+        INSERT INTO users (email, username, password_hash) 
+        VALUES ($1, $2, $3) 
+        RETURNING id, created_at
+    `
+	// Инициализируем структуру User нулевыми значениями
+	user := &User{}
+	// 2. Выполняем запрос с db.QueryRow(query, email, username, passwordHash)
+	// 3. Считываем результат в переменные user.ID и user.CreatedAt
+	err := db.QueryRow(query, email, username, passwordHash).Scan(&user.ID, &user.CreatedAt)
+	// 5. Обрабатываем ошибки
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// 4. Заполняем остальные поля структуры User
+	user.Email = email
+	user.Username = username
+
+	return user, nil
 }
 
 // GetUserByEmail находит пользователя по email
